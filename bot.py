@@ -1,53 +1,57 @@
-import asyncio
+import os
 import aiohttp
 from hydrogram import Client, filters
 from hydrogram.types import Message
+from hydrogram.errors import UsernameNotOccupied, UsernameInvalid
 
-# إعدادات البوت والـ API
-API_ID = 20182797          # ضع هنا api_id من my.telegram.org
-API_HASH = "cb730814928cca90368dd2df4cea4e38"  # ضع هنا api_hash
-BOT_TOKEN = "8753485771:AAFzMZj4jxrNwqYLg3okt2Eeoo9ZRO8KLmY" # توكن البوت من @BotFather
-HEROKU_API_URL = "https://testbot015.herokuapp.com" # رابط تطبيق هيركو الخاص بك
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-app = Client("teleyab_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("teleyab_master_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 @app.on_message(filters.command("start"))
-async def start_handler(client: Client, message: Message):
+async def start_cmd(client: Client, message: Message):
     await message.reply_text(
-        "👋 **أهلاً بك في بوت البحث عن أرقام التيليجرام!**\n\n"
-        "أرسل اسم المستخدم (اليوزرنيم) مسبوقاً بـ `@` للبحث عن الرقم المرتبط به."
+        "👋 **أهلاً بك في بوت كشف معلومات الحسابات والأرقام!**\n\n"
+        "أرسل المعرف (اليوزرنيم) مسبوقاً بـ `@` لجلب كامل بيانات الحساب."
     )
 
 @app.on_message(filters.text & ~filters.bot)
-async def lookup_handler(client: Client, message: Message):
-    text = message.text.strip()
-    
-    # تنظيف اليوزرنيم
-    username = text.replace("@", "").strip()
-    
-    status_msg = await message.reply_text("🔍 **جاري البحث في قاعدة البيانات...**")
-
-    # إرسال طلب إلى سيرفر Teleyab على Heroku
-    endpoint = f"{HEROKU_API_URL}/api/lookup" # تأكد من مسار نقطة النهاية (Endpoint)
-    payload = {"username": username}
+async def fetch_info(client: Client, message: Message):
+    raw_user = message.text.strip().replace("@", "")
+    status = await message.reply_text("🔍 **جاري فحص الحساب واستخراج البيانات...**")
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(endpoint, json=payload, timeout=15) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    phone = data.get("phone", "غير متوفر")
-                    await status_msg.edit_text(
-                        f"✅ **تم العثور على النتيجة:**\n\n"
-                        f"👤 **المستخدم:** @{username}\n"
-                        f"📞 **رقم الهاتف:** `{phone}`"
-                    )
-                elif resp.status == 404:
-                    await status_msg.edit_text("❌ **لم يتم العثور على رقم مرتبط بهذا المستخدم.**")
-                else:
-                    await status_msg.edit_text("⚠️ **حدث خطأ أثناء معالجة الطلب من السيرفر.**")
+        # جلب البيانات الحية المباشرة من تيليجرام
+        user = await client.get_users(raw_user)
+        
+        user_id = user.id
+        first_name = user.first_name or ""
+        last_name = user.last_name or ""
+        full_name = f"{first_name} {last_name}".strip() or "غير محدد"
+        is_premium = "نعم ⭐" if user.is_premium else "لا"
+        phone = user.phone_number if user.phone_number else "مخفي بواسطة الخصوصية"
+
+        # تنسيق الرد النهائي
+        result_text = (
+            f"✅ **تم العثور على بيانات المستخدم بنجاح:**\n\n"
+            f"👤 **الاسم:** {full_name}\n"
+            f"🔗 **اليوزر:** @{user.username or raw_user}\n"
+            f"🆔 **معرف الحساب (ID):** `{user_id}`\n"
+            f"📞 **رقم الهاتف:** `{phone}`\n"
+            f"🌟 **حساب مميز (Premium):** {is_premium}\n"
+            f"🛡 **نوع الحساب:** {'بوت' if user.is_bot else 'مستخدم حقيقي'}"
+        )
+        await status.edit_text(result_text)
+
+    except UsernameNotOccupied:
+        await status.edit_text("❌ **هذا المعرف غير مسجل أو محذوف.**")
+    except UsernameInvalid:
+        await status.edit_text("⚠️ **صيغة المعرف غير صحيحة.**")
     except Exception as e:
-        await status_msg.edit_text(f"⚠️ **فشل الاتصال بسيرفر API:**\n`{str(e)}`")
+        await status.edit_text(f"⚠️ **حدث خطأ أثناء جلب البيانات:**\n`{str(e)}`")
 
 if __name__ == "__main__":
     app.run()
