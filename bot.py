@@ -1,5 +1,5 @@
 import os
-import aiohttp
+import psycopg2
 from hydrogram import Client, filters
 from hydrogram.types import Message
 from hydrogram.errors import UsernameNotOccupied, UsernameInvalid
@@ -24,7 +24,7 @@ async def fetch_info(client: Client, message: Message):
     status = await message.reply_text("🔍 **جاري فحص الحساب واستخراج البيانات...**")
 
     try:
-        # جلب البيانات الحية المباشرة من تيليجرام
+        # جلب البيانات المباشرة من تيليجرام
         user = await client.get_users(raw_user)
         
         user_id = user.id
@@ -32,15 +32,37 @@ async def fetch_info(client: Client, message: Message):
         last_name = user.last_name or ""
         full_name = f"{first_name} {last_name}".strip() or "غير محدد"
         is_premium = "نعم ⭐" if user.is_premium else "لا"
-        phone = user.phone_number if user.phone_number else "مخفي بواسطة الخصوصية"
 
-        # تنسيق الرد النهائي
+        # 1. فحص تيليجرام أولاً
+        phone = user.phone_number
+
+        # 2. إذا كان الرقم مخفياً، ابحث عنه في قاعدة بيانات Heroku Postgres
+        if not phone and DATABASE_URL:
+            try:
+                conn = psycopg2.connect(DATABASE_URL)
+                cur = conn.cursor()
+                cur.execute("SELECT phone FROM users WHERE username = %s OR username = %s", (raw_user, str(user_id)))
+                row = cur.fetchone()
+                if row:
+                    phone = f"`{row[0]}` (من قاعدة البيانات)"
+                cur.close()
+                conn.close()
+            except Exception:
+                pass
+
+        # 3. إذا لم يوجد في تيليجرام ولا في قاعدة البيانات
+        if not phone:
+            phone = "مخفي بواسطة الخصوصية"
+        elif not phone.startswith("`"):
+            phone = f"`{phone}`"
+
+        # تجهيز نص النتيجة
         result_text = (
             f"✅ **تم العثور على بيانات المستخدم بنجاح:**\n\n"
             f"👤 **الاسم:** {full_name}\n"
             f"🔗 **اليوزر:** @{user.username or raw_user}\n"
             f"🆔 **معرف الحساب (ID):** `{user_id}`\n"
-            f"📞 **رقم الهاتف:** `{phone}`\n"
+            f"📞 **رقم الهاتف:** {phone}\n"
             f"🌟 **حساب مميز (Premium):** {is_premium}\n"
             f"🛡 **نوع الحساب:** {'بوت' if user.is_bot else 'مستخدم حقيقي'}"
         )
