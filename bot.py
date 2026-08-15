@@ -1,7 +1,7 @@
 import asyncio
 import aiohttp
-from pyrogram import Client, filters
-from pyrogram.types import Message
+from hydrogram import Client, filters
+from hydrogram.types import Message
 
 # إعدادات البوت والـ API
 API_ID = 20182797          # ضع هنا api_id من my.telegram.org
