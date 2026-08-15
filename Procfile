@@ -1,1 +1,1 @@
-web: bin/server
+worker: python bot.py
