@@ -1,3 +1,4 @@
 hydrogram
 tgcrypto
 aiohttp
+asyncpg
