@@ -1,2 +1,2 @@
-web: go run cmd/server/main.go
+web: server
 worker: python bot.py
